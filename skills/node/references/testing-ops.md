@@ -48,7 +48,7 @@ test('rejects mass-assignment keys', async () => {
 });
 ```
 
-**Route-inventory test**: iterate registered routes and assert each non-public route's stack contains `guard` and `accessGuard`. This catches the forgotten guard before review does.
+**Contract test (required):** copy `${CLAUDE_SKILL_DIR}/assets/openapi.test.js` → `tests/openapi.test.js`. It fails when a route is undocumented, a documented operation has no route, a non-public route lacks `guard`/`accessGuard`, docs and router disagree about public routes, or an operation lacks summary/tag/unique `operationId`/standard error responses. (Verified to catch an unguarded, undocumented `DELETE` route.)
 
 ## package.json Scripts
 
@@ -59,7 +59,9 @@ test('rejects mass-assignment keys', async () => {
     "dev": "node --watch --env-file-if-exists=.env src/index.js",
     "start": "node src/index.js",
     "lint": "eslint .",
-    "test": "node --test --experimental-test-coverage tests/",
+    "test": "node --test --experimental-test-coverage \"tests/**/*.test.js\"",
+    "docs:export": "node -e \"import('./src/app/docs/spec.js').then(({spec})=>require('node:fs').writeFileSync('openapi.json', JSON.stringify(spec,null,2)))\"",
+    "docs:lint": "npm run docs:export && spectral lint openapi.json --fail-severity=error",
     "audit": "npm audit --omit=dev --audit-level=high",
     "scan": "node scripts/scan-supply-chain.mjs ."
   }
@@ -98,7 +100,7 @@ Pre-commit (husky + lint-staged): `eslint --max-warnings=0` + `prettier --check`
 
 ## CI/CD
 
-- CI workflow (all PRs + pushes): scan → lint → test → audit. Pinned action SHAs, `permissions: contents: read`.
+- CI workflow (all PRs + pushes): scan → lint → test (incl. contract) → `docs:lint` → audit → upload `openapi.json` artifact. Pinned action SHAs, `permissions: contents: read`. Full staged pipeline for large systems: scale.md §10.
 - Deploy workflow: only from protected branches, environment approval, artifacts built in CI (not on the server), secrets from the environment, never echoed.
 - Self-hosted runners: ephemeral, no persistent deploy keys, never triggered by `pull_request` from forks.
 - Process manager / container: run as non-root, read-only filesystem where possible, `NODE_ENV=production`, health checks on `/v1/healthz` and `/v1/readyz`.

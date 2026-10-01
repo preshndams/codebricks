@@ -35,7 +35,7 @@ const { savingId } = req.validated.params;
 const saving = await Saving.findOne(scoped({ _id: savingId }, req.user, 'branchId'));
 ```
 
-**Function-level (BFLA)** — every route has `accessGuard(module, action)`. Add a test that walks `app._router` / a route registry and fails if any non-`// PUBLIC:` route lacks `guard`.
+**Function-level (BFLA)** — every route has `accessGuard(module, action)`. `tests/openapi.test.js` (from `assets/`) walks the module registry and fails if any route without `publicRoute` lacks `guard` + `accessGuard`, or if docs and code disagree on what's public.
 
 **Property-level (BOPLA / mass assignment)**:
 ```js
@@ -57,7 +57,7 @@ Responses: explicit `.select()` / DTO mappers. Schema secrets: `password: { type
 | `x-powered-by` | Disabled |
 | `trust proxy` | Exact hop count/subnet (wrong value = rate limits bypassable via `X-Forwarded-For`) |
 | Body parsers | `limit` on `json` **and** `urlencoded`; `extended: false` |
-| Swagger | Off in prod or behind `guard` + admin permission |
+| API docs | `DOCS_MODE=protected` (Basic auth) or `off` in prod; spec linted with the OWASP API ruleset; no real data in examples |
 | Errors | No stack traces / DB messages to clients |
 | `NODE_ENV` | `production` in prod (Express perf + no dev logging) |
 | Debug endpoints / seed routes | Absent from prod builds |
@@ -238,8 +238,8 @@ Password reset: opaque token hashed at rest, 30-min TTL, single use, invalidates
 **Webhook verification (Paystack example)**:
 ```js
 // routes: mount raw body ONLY for the webhook path, before express.json()
-route.post('/webhooks/paystack', express.raw({ type: 'application/json', limit: '100kb' }), async (req, res) => {
-  // PUBLIC: provider callback — authenticated by HMAC signature
+route.post('/webhooks/paystack', publicRoute, express.raw({ type: 'application/json', limit: '100kb' }), async (req, res) => {
+  // PUBLIC: provider callback — authenticated by HMAC signature (docs: op({ public: true, ... }))
   const expected = createHmac('sha512', config.paystack.secret).update(req.body).digest('hex');
   const received = String(req.headers['x-paystack-signature'] ?? '');
   if (!safeEqual(Buffer.from(expected), Buffer.from(received))) return res.sendStatus(401);

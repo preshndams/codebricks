@@ -30,7 +30,7 @@ Most AI-assisted code ships the happy path: Inter font, purple gradient, spinner
 | `/codebricks:react` | React 19.2 SPA: Vite, React Compiler, TanStack Query, Zod 4, Motion |
 | `/codebricks:react-native` | Expo SDK 57 / RN 0.86: New Architecture, Reanimated 4, FlashList v2, secure storage |
 | `/codebricks:flutter` | Flutter 3.44+: Riverpod 3, go_router, freezed 3, Material 3, obfuscated releases |
-| `/codebricks:node` | **Node.js 24 + Express 5 backend**: the CodeBricks module architecture, Mongoose, Redis, Joi, RBAC, money-safe flows |
+| `/codebricks:node` | **Node.js 24 + Express 5 backend standard for large-scale apps**: module architecture, Swagger/OpenAPI docs by default, RBAC, money-safe flows, queues/outbox, resilience, observability |
 | `/codebricks:security-audit` | Supply-chain/malware scan + OWASP Top 10:2025 audit of any stack, with incident response |
 
 ```
@@ -46,7 +46,8 @@ skills/
   react/        SKILL.md
   react-native/ SKILL.md
   flutter/      SKILL.md
-  node/         SKILL.md + references/{architecture,security,testing-ops}.md
+  node/         SKILL.md + references/{architecture,api-docs,security,scale,testing-ops}.md
+                + assets/{openapi.js, openapi.test.js, .spectral.yaml}
   security-audit/ SKILL.md + scripts/scan-supply-chain.mjs
 ```
 
@@ -105,20 +106,36 @@ claude --plugin-dir ./codebricks
 
 ```
 src/
-  index.js                      ← validate env → connect DB/Redis → listen → graceful shutdown
+  index.js / worker.js / scheduler.js   ← api, queue consumers, repeatable jobs (scale independently)
   app/
-    index.js                    ← app factory: middleware → routes → docs → 404 → error handler
+    index.js                    ← app factory: middleware → routes + docs → 404 → error handler
     config/env.js               ← the only file that reads process.env
-    routes/{index,middleware,swagger}.js
+    routes/{index,middleware}.js
+    docs/{openapi,spec}.js      ← OpenAPI 3.1 generator + spec (Swagger UI at /v1/docs)
+    modules/index.js            ← module registry: routing AND docs read this one list
     modules/<domain>/
       index.js                  ← guard → accessGuard → joiValidator → controller
       controller.js             ← HTTP only
-      service.js                ← business logic + data access, typed errors
-      validation.js             ← Joi schemas, unknown keys rejected, every field bounded
+      service.js                ← business logic, typed errors
+      validation.js             ← Joi schemas (unknown keys rejected, every field bounded) → also the docs
       model.js                  ← Mongoose schema + indexes
+      docs.js                   ← OpenAPI operations for the module
+      [repository|public|events|jobs].js  ← added as the module grows
     utils/{authGuard,error,constant,logger,db,redis,...}.js
     utils/providers/<vendor>.js
 ```
+
+**API docs by default.** Request schemas are generated from the same Joi validation that guards each route, so docs can't drift. Swagger UI is served at `/v1/docs` (public in dev, Basic-auth in production). A contract test fails the build if any route is undocumented or unguarded, and Spectral lints the spec against the OWASP API Security ruleset. The generator (`assets/openapi.js`) is verified against Joi 18, Express 5 and swagger-ui-express 5.
+
+**Built for scale** (`references/scale.md`):
+- modular monolith with lint-enforced boundaries
+- stateless API processes
+- BullMQ queues with a transactional outbox
+- cursor pagination, ETags and 202 async jobs
+- circuit breakers and load shedding
+- OpenTelemetry tracing and SLOs
+- zero-trust networking and secrets
+- a full CI/CD pipeline and a production-readiness gate
 
 What it enforces, among other things:
 - **Object-level authorization in the query** (`scoped({ _id }, user)`), never fetch-then-check, never IDs merged from params+query+body.

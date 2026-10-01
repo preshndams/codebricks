@@ -451,7 +451,10 @@ backdrop-filter: blur(12px);                  /* glass */
 | Validation            | <!-- Joi / Zod --> |
 | API style / versioning| <!-- REST /v1 --> |
 | Response envelope     | `{ success, message, data }` / errors `{ success:false, message, error, requestId }` |
-| Docs                  | <!-- OpenAPI via swagger-jsdoc; disabled/protected in production --> |
+| API docs              | <!-- OpenAPI 3.1 generated from Joi (docs.js per module); /v1/docs public in dev, Basic-auth in prod --> |
+| Process types         | <!-- api / worker / scheduler --> |
+| Async & events        | <!-- BullMQ queues, transactional outbox --> |
+| Observability         | <!-- OpenTelemetry + pino; SLOs --> |
 | Deployment            | <!-- PM2 / containers / serverless; CI provider --> |
 
 ### Auth & Authorization

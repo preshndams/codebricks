@@ -66,7 +66,14 @@ const schema = Joi.object({
   JWT_AUDIENCE: Joi.string().default('web'),
   CORS_ORIGINS: Joi.string().required(),            // comma-separated allowlist
   TRUST_PROXY: Joi.alternatives(Joi.number().integer().min(0), Joi.string()).default(1),
-  ENABLE_DOCS: Joi.boolean().default(false),
+  APP_NAME: Joi.string().default('api'),
+  PUBLIC_BASE_URL: Joi.string().uri().default('http://localhost:4000'),
+  // API docs: on by default; Basic-auth protected in production (see api-docs.md §7)
+  DOCS_MODE: Joi.string().valid('public', 'protected', 'off')
+    .default(Joi.ref('NODE_ENV', { adjust: (env) => (env === 'production' ? 'protected' : 'public') })),
+  DOCS_USER: Joi.string().when('DOCS_MODE', { is: 'protected', then: Joi.required() }),
+  DOCS_PASSWORD: Joi.string().min(16).when('DOCS_MODE', { is: 'protected', then: Joi.required() }),
+  DOCS_CONTACT_EMAIL: Joi.string().email().default('api@example.com'),
   PAYSTACK_SECRET_KEY: Joi.string().allow(''),
   PAYSTACK_BASE_URL: Joi.string().uri({ scheme: ['https'] }).default('https://api.paystack.co'),
 }).unknown(true);                                   // OS env has many unrelated keys
@@ -86,7 +93,13 @@ export const config = Object.freeze({
   jwt: { secret: value.JWT_SECRET, issuer: value.JWT_ISSUER, audience: value.JWT_AUDIENCE, ttl: '15m' },
   corsOrigins: value.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
   trustProxy: value.TRUST_PROXY,
-  enableDocs: value.ENABLE_DOCS,
+  appName: value.APP_NAME,
+  publicBaseUrl: value.PUBLIC_BASE_URL,
+  docs: {
+    mode: value.DOCS_MODE,
+    basicAuth: { user: value.DOCS_USER, password: value.DOCS_PASSWORD },
+    contactEmail: value.DOCS_CONTACT_EMAIL,
+  },
   paystack: { secret: value.PAYSTACK_SECRET_KEY, baseUrl: value.PAYSTACK_BASE_URL },
 });
 ```
@@ -101,7 +114,6 @@ Commit `.env.example` (keys, no values). Never commit `.env`.
 import express from 'express';
 import middleware from './routes/middleware.js';
 import routes from './routes/index.js';
-import swagger from './routes/swagger.js';
 import { errorHandler, notFoundHandler } from './utils/errorHandler.js';
 import { config } from './config/env.js';
 import './utils/eventHandlers.js';
@@ -112,8 +124,7 @@ export const createApp = () => {
   app.set('trust proxy', config.trustProxy);
 
   middleware(app);
-  routes(app);
-  if (config.enableDocs) swagger(app);   // off by default; protect with guard if on in prod
+  routes(app);                       // module routers + /v1/docs + /v1/openapi.json
 
   app.use(notFoundHandler);
   app.use(errorHandler);
@@ -183,15 +194,35 @@ Webhook routes that need the raw body for HMAC verification mount `express.raw({
 
 ---
 
-## 5. `src/app/routes/index.js` — Mounting
+## 5. Module Registry + `src/app/routes/index.js` — Mounting
+
+The registry is the **single list** of modules. Routing and API docs both read it, so they can't disagree.
 
 ```js
+// src/app/modules/index.js
+import userRouter from './user/index.js';
+import userDocs from './user/docs.js';
+import branchRouter from './branch/index.js';
+import branchDocs from './branch/docs.js';
+import savingTypeRouter from './savingType/index.js';     // a ROUTER — never a model
+import savingTypeDocs from './savingType/docs.js';
+
+export const modules = [
+  { name: 'user', path: '/user', router: userRouter, docs: userDocs },
+  { name: 'branch', path: '/branch', router: branchRouter, docs: branchDocs },
+  { name: 'savingType', path: '/saving-type', router: savingTypeRouter, docs: savingTypeDocs },
+];
+```
+
+```js
+// src/app/routes/index.js
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { redis } from '../utils/redis.js';
-import userRoute from '../modules/user/index.js';
-import branchRoute from '../modules/branch/index.js';
-import savingTypeRoute from '../modules/savingType/index.js';   // a ROUTER — never a model
+import { modules } from '../modules/index.js';
+import { spec } from '../docs/spec.js';
+import { mountDocs } from '../docs/openapi.js';
+import { config } from '../config/env.js';
 
 export default (app) => {
   const v1 = Router();
@@ -203,13 +234,16 @@ export default (app) => {
     res.status(dbUp && redisUp ? 200 : 503).json({ success: dbUp && redisUp, message: 'readiness', data: { dbUp, redisUp } });
   });
 
-  v1.use('/user', userRoute);
-  v1.use('/branch', branchRoute);
-  v1.use('/saving-type', savingTypeRoute);
+  for (const m of modules) v1.use(m.path, m.router);
+
+  // Swagger UI at /v1/docs, spec at /v1/openapi.json — public in dev/staging, Basic-auth in prod.
+  mountDocs(v1, spec, { mode: config.docs.mode, basicAuth: config.docs.basicAuth, persistAuthorization: !config.isProd });
 
   app.use('/v1', v1);
 };
 ```
+
+`src/app/docs/openapi.js` is copied verbatim from `${CLAUDE_SKILL_DIR}/assets/openapi.js`; `src/app/docs/spec.js` is shown in api-docs.md §3.
 
 ---
 
@@ -293,7 +327,9 @@ export const joiValidator = (constraint) => (req, res, next) => {
 };
 
 export const JoiObjectId = () =>
-  Joi.string().length(24).hex().custom((v, h) => (isValidObjectId(v) ? v : h.error('any.invalid')), 'ObjectId');
+  Joi.string().length(24).hex()
+    .custom((v, h) => (isValidObjectId(v) ? v : h.error('any.invalid')), 'ObjectId')
+    .meta({ format: 'objectid', examples: ['665f1c2e8b3c4a0012345678'] });   // picked up by the OpenAPI generator
 
 /** Standard pagination fragment — capped, never "0 = everything". */
 export const paginationSchema = {
@@ -346,15 +382,25 @@ export const guard = async (req, res, next) => {
   next();
 };
 
-/** RBAC: permission derived from the role map on the server — never from the token or the client. */
-export const accessGuard = (moduleKey, permissionKey) => (req, res, next) => {
-  const { role } = req.user;
-  if (role === USER_ROLE.superAdmin) return next();
-  if (ROLE_MAPPER[role]?.[moduleKey]?.permissions?.[permissionKey] !== true) {
-    throw new AuthorizationError(`Access denied: missing ${moduleKey}.${permissionKey}`);
-  }
-  next();
-};
+/**
+ * RBAC: permission derived from the role map on the server — never from the token or the client.
+ * Tagged (isAccessGuard, permission) so the contract test can prove every protected route has it.
+ */
+export const accessGuard = (moduleKey, permissionKey) =>
+  Object.assign(
+    (req, res, next) => {
+      const { role } = req.user;
+      if (role === USER_ROLE.superAdmin) return next();
+      if (ROLE_MAPPER[role]?.[moduleKey]?.permissions?.[permissionKey] !== true) {
+        throw new AuthorizationError(`Access denied: missing ${moduleKey}.${permissionKey}`);
+      }
+      next();
+    },
+    { isAccessGuard: true, permission: `${moduleKey}.${permissionKey}` },
+  );
+
+/** Marker for intentionally public routes (login, webhooks, health). Must be first in the chain. */
+export const publicRoute = Object.assign((req, res, next) => next(), { isPublic: true });
 
 /**
  * Object-level authorization IN the database query. Services wrap every scoped lookup:
@@ -390,7 +436,6 @@ import { joiValidator } from '../../utils/index.js';
 import { guard, accessGuard } from '../../utils/authGuard.js';
 import { ROUTE_MAPPER, ACTION_MAPPER } from '../../utils/constant.js';
 import { processExport, processExportData } from '../../utils/processMiddleware.js';
-import { sensitiveLimiter } from '../../routes/middleware.js';
 
 const M = ROUTE_MAPPER.branch.name;
 const route = Router();
@@ -400,12 +445,11 @@ route.get('/:branchId', guard, accessGuard(M, ACTION_MAPPER.view), joiValidator(
 route.post('/', guard, accessGuard(M, ACTION_MAPPER.add), joiValidator(validation.createBranch), controller.createBranch);
 route.patch('/:branchId', guard, accessGuard(M, ACTION_MAPPER.update), joiValidator(validation.updateBranch), controller.updateBranch);
 route.delete('/:branchId', guard, accessGuard(M, ACTION_MAPPER.delete), joiValidator(validation.deleteBranch), controller.deleteBranch);
-route.get('/export/all', guard, sensitiveLimiter, accessGuard(M, ACTION_MAPPER.list), /* ... */);
 
 export default route;
 ```
 
-Static paths (`/export/all`) are declared before or distinctly from param paths so `/:branchId` never swallows them.
+Every route here has a matching operation in `docs.js` (see api-docs.md §4) — the contract test fails otherwise. Static paths (e.g. `/export`) are declared before param paths so `/:branchId` never swallows them; sensitive ones (exports, OTP) add `sensitiveLimiter` after `guard`.
 
 ### `validation.js`
 ```js
@@ -555,6 +599,9 @@ export default model('Branches', schema);
 ```
 
 `timestamps: true` replaces hand-rolled `createdAt`/`updatedAt` defaults (which never update `updatedAt` on `findByIdAndUpdate`).
+
+### `docs.js`
+Required for every module. Uses `op()` with the same `validation` objects, so request docs are generated. Full example: api-docs.md §4. Register `{ name, path, router, docs }` in `modules/index.js`.
 
 ---
 
