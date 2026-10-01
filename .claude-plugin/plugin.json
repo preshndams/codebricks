@@ -1,0 +1,13 @@
+{
+  "name": "codebricks",
+  "version": "2.0.0",
+  "description": "Principal-engineer skills for frontend (Next.js, React, React Native, Flutter), Node.js backend, and security auditing — with a shared design system and a shared security baseline.",
+  "author": {
+    "name": "Precious Ndamati",
+    "url": "https://github.com/preshndams"
+  },
+  "homepage": "https://github.com/preshndams/codebricks",
+  "repository": "https://github.com/preshndams/codebricks",
+  "license": "MIT",
+  "keywords": ["frontend", "backend", "nodejs", "express", "nextjs", "react", "react-native", "flutter", "security", "owasp"]
+}

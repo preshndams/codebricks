@@ -1,13 +1,8 @@
----
-name: codebricks-shared-design-rules
-description: Universal design principles for all CodeBricks frontend skills. Every platform skill (React, Next.js, React Native, Flutter) loads this before making any visual or layout decision.
----
-
 # CodeBricks — Shared Design Rules
 
-> This file is the single source of truth for design principles across all platforms.
+> This file is the single source of truth for design principles across all frontend platforms.
 > Platform skills extend these rules; they never override them.
-> Load this FIRST. Then apply platform-specific rules on top.
+> Load this FIRST, together with `security-baseline.md`. Then apply platform-specific rules on top.
 
 ---
 
@@ -187,5 +182,6 @@ Each platform skill (`/codebricks:react`, `/codebricks:nextjs`, `/codebricks:rea
 - Framework-specific anti-patterns
 - Platform-specific performance non-negotiables
 - Framework-specific tooling and test requirements
+- Platform-specific security controls (on top of `security-baseline.md`)
 
-If a platform skill conflicts with this file, this file wins.
+If a platform skill conflicts with this file, this file wins. Security rules in `security-baseline.md` win over both.

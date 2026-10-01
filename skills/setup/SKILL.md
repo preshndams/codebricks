@@ -1,6 +1,8 @@
 ---
-name: codebricks-setup
-description: Run the CodeBricks design intake questionnaire for a project. Generates CODEBRICKS.md (full design spec) and questionnaire.md (quick-load summary) in the project root. Trigger when a user says "set up CodeBricks", "run the questionnaire", or starts a new project and needs design decisions locked down before building.
+name: setup
+description: Run the CodeBricks project intake questionnaire — design system, backend/API decisions, and security & compliance. Generates CODEBRICKS.md (full spec) and questionnaire.md (quick-load summary) in the project root, which every CodeBricks skill reads first. Use when a user says "set up CodeBricks", "run the questionnaire", or starts a new project and needs decisions locked down before building.
+argument-hint: "[optional: frontend | backend | full]"
+disable-model-invocation: true
 ---
 
 # CodeBricks — Project Design Setup
@@ -20,8 +22,9 @@ Your goal: run a thorough, conversational questionnaire that extracts every deci
 3. If an answer is vague, push back once with a sharper question. "Minimal" means nothing — ask for a reference app or a specific color. "Clean" tells you nothing — ask what app they consider the benchmark.
 4. If the user doesn't know, offer the **sensible production default** for their stack and move on.
 5. If the user has a `screenshots/` folder, ask them to confirm what each screenshot represents (target feel, competitor, inspiration).
-6. After all sections are complete, generate both files in the current working directory.
-6. Tell the user: "Run `git add CODEBRICKS.md && git commit -m 'chore: add CodeBricks design specification'` to lock this in."
+6. Scope the session from `$ARGUMENTS` or Section 1's answers: **frontend** → Sections 1–13 + 15; **backend** → Sections 1, 10 (compliance only), 13, 14, 15; **full** → all.
+7. After all sections are complete, generate both files in the current working directory.
+8. Tell the user: "Run `git add CODEBRICKS.md && git commit -m 'chore: add CodeBricks design specification'` to lock this in."
 
 ---
 
@@ -251,144 +254,42 @@ Work through each sub-topic:
 
 ---
 
+## Section 14 — Backend & API (skip for frontend-only projects)
+
+1. **Runtime & framework** — Node.js 24 LTS + Express 5 (CodeBricks default) / Fastify / NestJS / Next.js route handlers only / other?
+2. **Language** — JavaScript ESM / TypeScript (Node native type stripping)?
+3. **Database** — MongoDB + Mongoose / PostgreSQL + Drizzle or Prisma / other? Are multi-document transactions available (replica set / Atlas)?
+4. **Cache & queues** — Redis (sessions, rate limits, idempotency)? BullMQ for background jobs?
+5. **Validation library** — Joi (CodeBricks module default) / Zod?
+6. **Auth model** — JWT + server-side session allowlist / cookie sessions / third-party (Clerk, Better Auth, Auth0)? MFA for staff roles?
+7. **Authorization model** — list the roles. Is data scoped by tenant / branch / region / owner? Which field?
+8. **Money** — does the system move or store money? Currency and minor unit (e.g. NGN → kobo)? Maker-checker approvals?
+9. **Third-party providers** — payments, SMS/email, storage, KYC? Which ones send webhooks?
+10. **API style & versioning** — REST `/v1` (default) / GraphQL / tRPC? OpenAPI docs exposed where?
+11. **Deployment** — PM2 on VM / containers / serverless? CI provider? Self-hosted runners?
+
+---
+
+## Section 15 — Security & Compliance (always)
+
+1. **Data classification** — what personal or sensitive data is stored? (names, phone, email, government IDs like BVN/NIN/SSN, bank/card data, health data, location)
+2. **Regulation** — NDPR/NDPA, GDPR, PCI-DSS, HIPAA, SOC 2, CBN guidelines, none?
+3. **Threat profile** — who would attack this? (fraudsters after money, insiders, competitors scraping, credential stuffers)
+4. **Session policy** — access-token lifetime, idle timeout, single-session-per-user?
+5. **Audit requirements** — which actions must be audit-logged and for how long?
+6. **Security contacts** — who receives security alerts and vulnerability reports? (→ `SECURITY.md`)
+
+Sensible defaults if unsure: classify conservatively (treat anything financial or ID-related as **sensitive**), 15-min access tokens, audit all money movements and permission changes for 7 years.
+
+---
+
 ## Generating CODEBRICKS.md
 
-Once all sections are complete, produce a `CODEBRICKS.md` file in the project root with the following structure. Fill every field from the answers collected. Where the user chose "default" or "unsure", fill in the sensible production default and mark it `# default`.
+Once all sections are complete, produce `CODEBRICKS.md` in the project root using **[CODEBRICKS.template.md](CODEBRICKS.template.md)** (`${CLAUDE_SKILL_DIR}/CODEBRICKS.template.md`) as the exact structure — it is the single source of truth for the spec format. Fill every field from the answers collected. Where the user chose "default" or "unsure", fill in the sensible production default and mark it `<!-- default -->`.
 
-```markdown
-# CODEBRICKS.md — Project Design Specification
-# Generated by /codebricks:setup — commit this file and keep it updated.
-# Referenced by /codebricks:react, /codebricks:nextjs, /codebricks:react-native, /codebricks:flutter
-
-## Project Identity
-- name:
-- type:
-- framework:
-- domain:
-- audience:
-- brand_guide_url:
-
-## Design Personality
-- archetype:           # A/B/C/D/E/F
-- reference_apps:      # comma-separated
-- summary:             # one sentence describing the intended feel
-
-## Color System
-- color_primary:       # hex
-- color_accent:        # hex
-- color_neutral_tone:  # warm | cool | true
-- color_surface:       # hex
-- color_background:    # hex
-- dark_mode:           # light-only | dark-only | both-system | both-toggle
-- semantic_standard:   # true | false
-
-## Color Tokens
-- --color-primary:
-- --color-primary-hover:
-- --color-primary-foreground:
-- --color-accent:
-- --color-accent-foreground:
-- --color-background:
-- --color-surface:
-- --color-surface-raised:
-- --color-border:
-- --color-text-primary:
-- --color-text-secondary:
-- --color-text-muted:
-- --color-success:
-- --color-warning:
-- --color-error:
-- --color-info:
-
-## Typography
-- font_body:
-- font_display:
-- font_mono:
-- base_size_px:
-- type_scale:          # tight | standard | expressive
-- weight_range:        # minimal (400,700) | full (400,500,600,700)
-
-## Spacing Scale (base-8 system)
-- space-1:  4px
-- space-2:  8px
-- space-3:  12px
-- space-4:  16px
-- space-5:  20px
-- space-6:  24px
-- space-8:  32px
-- space-10: 40px
-- space-12: 48px
-- space-16: 64px
-- space-20: 80px
-- space-24: 96px
-
-## Border Radius
-- radius-none: 0px
-- radius-sm:
-- radius-md:
-- radius-lg:
-- radius-xl:
-- radius-full: 9999px
-
-## Layout
-- navigation_pattern:
-- content_max_width:
-- layout_density:      # compact | comfortable | spacious
-- grid_columns:
-- sticky_header:       # true | false
-- sticky_sidebar:      # true | false
-
-## Component Style
-- card_style:          # flat | elevated | subtle | glass | bordered
-- button_primary:      # solid | ghost | tonal
-- button_radius:       # inherit | pill
-- input_style:         # outlined | filled | underline
-- input_label:         # floating | static
-
-## Iconography
-- icon_library:
-- icon_style:
-- icon_size_default:   # px
-- icon_label_required: # always | contextual | never
-
-## Motion
-- motion_philosophy:   # none | functional | moderate | expressive
-- transition_duration: # ms
-- easing:              # ease-out | ease-in-out | spring
-- reduced_motion:      # respected (always true)
-
-## Imagery
-- visual_strategy:
-- illustration_library:
-- avatar_fallback:
-- image_ratios:
-
-## Accessibility
-- wcag_level:          # AA | AAA
-- screen_reader:       # true | false
-- keyboard_nav:        # true | false
-- i18n:                # none | multi | rtl
-- compliance:
-
-## Target Devices
-- device_priority:     # mobile-first | desktop-first | equal
-- breakpoints:         # comma-separated px values
-- pwa:                 # true | false
-- performance_budget:  # fast-3g | lte | wifi
-
-## Design Tokens Architecture
-- token_strategy:      # semantic | scale | two-tier
-- theme_switching:     # static | toggle | multi-brand
-- token_format:        # css-props | js-object | tailwind | style-dictionary
-- component_base:      # custom | shadcn | radix | mui | mantine | antd | nativebase
-
-## Code Conventions
-- file_naming:         # kebab-case | pascalcase
-- documentation:       # jsdoc | storybook | none
-- barrel_files:        # true | false
-- styling_method:      # utility | css-modules | css-in-js
-- lint_strictness:     # strict | standard | relaxed
-```
+- Frontend-only project → omit section 19 (Backend & API).
+- Backend-only project → omit the visual sections (3–12, 14, 15, 17) and keep 1, 2 (one-line intent), 13 (compliance), 16, 18–20.
+- Section 20 (Security & Compliance) is **always** filled.
 
 After writing `CODEBRICKS.md`, also generate a `questionnaire.md` file in the project root. This is a lightweight, quick-load summary that platform skills read at the top of every session — keep it under 60 lines:
 
@@ -422,6 +323,20 @@ After writing `CODEBRICKS.md`, also generate a `questionnaire.md` file in the pr
 - component_base: [custom | shadcn | radix | mui | mantine | antd | nativebase]
 - layout_density: [compact | comfortable | spacious]
 - navigation_pattern: [top-nav | left-sidebar | bottom-tabs | drawer | none]
+
+## Backend (omit if frontend-only)
+- runtime: [Node 24 + Express 5 | ...]
+- db: [MongoDB/Mongoose | Postgres/Drizzle | ...]  transactions: [yes | no]
+- validation: [joi | zod]
+- auth: [jwt+redis-session | cookie-session | provider]
+- roles: [comma-separated]  scope_field: [branchId | tenantId | ownerId]
+- money: [none | currency + minor unit]
+
+## Security
+- data_classes: [public, pii, sensitive-financial, ...]
+- compliance: [NDPR, GDPR, PCI-DSS, ...]
+- access_token_ttl: [15m]
+- audit: [actions + retention]
 
 ## Anti-Patterns Flagged for This Project
 - [any project-specific patterns to avoid, from the questionnaire answers]
