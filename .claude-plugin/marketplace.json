@@ -1,0 +1,15 @@
+{
+  "name": "codebricks",
+  "description": "CodeBricks — engineering-grade Claude Code skills for frontend, backend, and security.",
+  "owner": {
+    "name": "Precious Ndamati",
+    "url": "https://github.com/preshndams"
+  },
+  "plugins": [
+    {
+      "name": "codebricks",
+      "source": "./",
+      "description": "Next.js, React, React Native, Flutter, Node.js backend, and security-audit skills with a shared design system and security baseline."
+    }
+  ]
+}
